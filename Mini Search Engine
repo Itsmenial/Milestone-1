@@ -1,0 +1,80 @@
+const express = require('express');
+const app = express();
+
+app.use(express.json()); // Parse JSON request bodies
+
+const articles = []; // In-memory storage for articles
+const index = {}; // In-memory index for keyword mapping
+let articleIdCounter = 1;
+
+// Add Article Endpoint
+app.post('/articles', (req, res) => {
+    const { title, content, tags } = req.body;
+
+    if (!title || !content || !Array.isArray(tags)) {
+        return res.status(400).send({ error: 'Title, content, and tags are required.' });
+    }
+
+    const article = {
+        id: articleIdCounter++,
+        title,
+        content,
+        tags,
+        createdAt: new Date(),
+    };
+
+    articles.push(article);
+
+    const keywords = [...title.split(/\s+/), ...content.split(/\s+/), ...tags];
+    keywords.forEach((word) => {
+        word = word.toLowerCase();
+        if (!index[word]) index[word] = [];
+        index[word].push(article.id);
+    });
+
+    res.status(201).send({ message: 'Article added successfully', article });
+});
+
+// Search Articles Endpoint
+app.get('/articles/search', (req, res) => {
+    const { keyword, sortBy = 'relevance' } = req.query;
+
+    if (!keyword) {
+        return res.status(400).send({ error: 'Keyword is required for search.' });
+    }
+
+    const keywordLower = keyword.toLowerCase();
+    const articleIds = index[keywordLower] || [];
+
+    const results = articleIds
+        .map((id) => {
+            const article = articles.find((art) => art.id === id);
+            const relevance = (article.title.match(new RegExp(keyword, 'gi')) || []).length +
+                              (article.content.match(new RegExp(keyword, 'gi')) || []).length;
+            return { ...article, relevance };
+        });
+
+    if (sortBy === 'relevance') {
+        results.sort((a, b) => b.relevance - a.relevance);
+    } else if (sortBy === 'date') {
+        results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+
+    res.send(results);
+});
+
+// Get Article by ID Endpoint
+app.get('/articles/:id', (req, res) => {
+    const article = articles.find((art) => art.id === parseInt(req.params.id));
+
+    if (!article) {
+        return res.status(404).send({ error: 'Article not found.' });
+    }
+
+    res.send(article);
+});
+
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`Mini Search Engine running on http://localhost:${PORT}`);
+});
